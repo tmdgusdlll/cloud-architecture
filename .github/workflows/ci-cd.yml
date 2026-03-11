@@ -20,9 +20,17 @@ jobs:
 
       - name: Build and Test with Gradle
         env:
+          # 1. AWS 가짜 신분증
           AWS_REGION: ap-northeast-2
           AWS_ACCESS_KEY_ID: dummy-access-key
           AWS_SECRET_ACCESS_KEY: dummy-secret-key
+          # 2. application.yml 빈칸 채우기용 가짜 데이터
+          DB_HOST: dummy-db-host
+          DB_PORT: 3306
+          DB_NAME: dummy-db
+          DB_USERNAME: dummy-user
+          DB_PASSWORD: dummy-password
+          TEAM_NAME: dummy-team-name
         run: |
           chmod +x ./gradlew
           ./gradlew clean build
