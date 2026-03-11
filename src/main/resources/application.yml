@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: Cloud-Architecture
+
+  profiles:
+    active: local
+
+logging:
+  level:
+    root: INFO
+    com.example: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/app.log
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
