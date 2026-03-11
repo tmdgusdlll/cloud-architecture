@@ -43,7 +43,7 @@ jobs:
 
       - name: Build and Push Docker Image
         run: |
-          docker build -t ${{ vars.DOCKER_USERNAME }}/cloud-architecture:latest .
+          docker build --platform linux/arm64 -t ${{ vars.DOCKER_USERNAME }}/cloud-architecture:latest .
           docker push ${{ vars.DOCKER_USERNAME }}/cloud-architecture:latest
 
       - name: Deploy to EC2
