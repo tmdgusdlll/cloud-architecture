@@ -37,5 +37,5 @@ public class Member {
         this.profileImageUrl = profileImageUrl;
     }
 
-    // 아 어렵다;;
+    // 아 어렵다;;222
 }
