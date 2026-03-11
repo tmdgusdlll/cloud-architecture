@@ -19,6 +19,10 @@ jobs:
           distribution: 'corretto'
 
       - name: Build and Test with Gradle
+        env:
+          AWS_REGION: ap-northeast-2
+          AWS_ACCESS_KEY_ID: dummy-access-key
+          AWS_SECRET_ACCESS_KEY: dummy-secret-key
         run: |
           chmod +x ./gradlew
           ./gradlew clean build
