@@ -36,4 +36,6 @@ public class Member {
     public void updateProfileImageUrl(String profileImageUrl) {
         this.profileImageUrl = profileImageUrl;
     }
+
+    // 아 어렵다;;
 }
