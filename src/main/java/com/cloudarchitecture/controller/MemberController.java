@@ -2,14 +2,13 @@ package com.cloudarchitecture.controller;
 
 import com.cloudarchitecture.common.ApiResponse;
 import com.cloudarchitecture.dto.request.MemberRequest;
+import com.cloudarchitecture.dto.response.CloudFrontUrlResponse;
 import com.cloudarchitecture.dto.response.FileUploadResponse;
 import com.cloudarchitecture.dto.response.MemberResponse;
-import com.cloudarchitecture.dto.response.PresignedUrlResponse;
 import com.cloudarchitecture.service.MemberService;
 import com.cloudarchitecture.service.S3Service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.coyote.Response;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -50,10 +49,10 @@ public class MemberController {
     }
 
     @GetMapping("/{memberId}/profile-image")
-    public ResponseEntity<ApiResponse<PresignedUrlResponse>> getPresignedUrl(
+    public ResponseEntity<ApiResponse<CloudFrontUrlResponse>> getPresignedUrl(
             @PathVariable Long memberId
     ) {
         log.info("[API - LOG] GET /api/members/{}/profile-image", memberId);
-        return ResponseEntity.status(HttpStatus.OK).body(s3Service.getPresignedUrl(memberId));
+        return ResponseEntity.status(HttpStatus.OK).body(s3Service.getcloudFrontUrl(memberId));
     }
 }

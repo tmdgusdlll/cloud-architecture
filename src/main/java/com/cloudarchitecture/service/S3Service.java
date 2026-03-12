@@ -1,12 +1,12 @@
 package com.cloudarchitecture.service;
 
 import com.cloudarchitecture.common.ApiResponse;
+import com.cloudarchitecture.dto.response.CloudFrontUrlResponse;
 import com.cloudarchitecture.dto.response.FileUploadResponse;
-import com.cloudarchitecture.dto.response.PresignedUrlResponse;
 import com.cloudarchitecture.entity.Member;
 import com.cloudarchitecture.exception.FileUploadException;
 import com.cloudarchitecture.exception.MemberNotFoundException;
-import com.cloudarchitecture.exception.PresignedUrlGenerationException;
+import com.cloudarchitecture.exception.CloudFrontUrlGenerationException;
 import com.cloudarchitecture.repository.MemberRepository;
 import io.awspring.cloud.s3.S3Template;
 import lombok.RequiredArgsConstructor;
@@ -15,8 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.net.URL;
-import java.time.Duration;
 import java.util.UUID;
 
 @Service
@@ -28,6 +26,9 @@ public class S3Service {
 
     @Value("${spring.cloud.aws.s3.bucket}")
     private String bucket;
+
+    @Value("${spring.cloud.aws.s3.cloudfront.domain}")
+    private String cloudFrontDomain;
 
     public ApiResponse<FileUploadResponse> uploadProfileImage(Long memberId, MultipartFile file) {
         Member member = memberRepository.findById(memberId).orElseThrow(
@@ -46,17 +47,17 @@ public class S3Service {
         }
     }
 
-    public ApiResponse<PresignedUrlResponse> getPresignedUrl(Long memberId) {
+    public ApiResponse<CloudFrontUrlResponse> getcloudFrontUrl(Long memberId) {
         try {
             Member member = memberRepository.findById(memberId).orElseThrow(
                     () -> new MemberNotFoundException("해당 멤버가 없습니다.")
             );
             String key = member.getProfileImageUrl();
+            String cloudFrontUrl = cloudFrontDomain + key;
 
-            URL presignedUrl = s3Template.createSignedGetURL(bucket, key, Duration.ofDays(7));
-            return ApiResponse.success(new PresignedUrlResponse(presignedUrl.toString()));
+            return ApiResponse.success(new CloudFrontUrlResponse(cloudFrontUrl));
         } catch (Exception e) {
-            throw new PresignedUrlGenerationException("Presigned URL 생성에 실패했습니다");
+            throw new CloudFrontUrlGenerationException("CloudFrontURL 생성에 실패했습니다");
         }
     }
 }

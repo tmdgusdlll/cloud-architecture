@@ -20,6 +20,8 @@ spring:
     aws:
       s3:
         bucket: cloud-architecture-files
+      cloudfront:
+        domain: ${CLOUDFRONT_DOMAIN}
 
 logging:
   level:
