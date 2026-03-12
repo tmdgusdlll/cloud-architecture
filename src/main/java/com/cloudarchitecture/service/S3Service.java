@@ -27,7 +27,7 @@ public class S3Service {
     @Value("${spring.cloud.aws.s3.bucket}")
     private String bucket;
 
-    @Value("${spring.cloud.aws.s3.cloudfront.domain}")
+    @Value("${spring.cloud.aws.cloudfront.domain}")
     private String cloudFrontDomain;
 
     public ApiResponse<FileUploadResponse> uploadProfileImage(Long memberId, MultipartFile file) {
