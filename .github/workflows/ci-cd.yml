@@ -52,12 +52,14 @@ jobs:
           ./gradlew clean build
 
       - name: Login to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
       - name: Build and Push Docker Image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker build --platform linux/arm64 \
             -t ${{ vars.DOCKER_USERNAME }}/cloud-architecture:${{ steps.vars.outputs.short_sha }} \
@@ -78,15 +80,13 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-northeast-2
 
-      # 🌟 1. 미래에 오토스케일링으로 켜질 새 서버를 위해 시작 템플릿 업데이트 (필수)
-      - name: Update Launch Template
+      - name: Update Launch Template (recommended)
         env:
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
           DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
           LAUNCH_TEMPLATE_ID: ${{ vars.LAUNCH_TEMPLATE_ID }}
         run: |
-          # [해결책] 1. 스크립트를 텍스트 파일(userdata.sh)로 먼저 안전하게 저장합니다.
-          cat << 'EOF' > userdata.sh
+          USER_DATA=$(cat <<'USERDATA' | sed "s|__IMAGE_TAG__|${IMAGE_TAG}|g; s|__DOCKER_USERNAME__|${DOCKER_USERNAME}|g" | base64 -w 0
           #!/bin/bash
           set -e
           AWS_REGION="ap-northeast-2"
@@ -109,17 +109,18 @@ jobs:
           echo $DOCKER_TOKEN | docker login -u $DOCKER_USERNAME --password-stdin
 
           docker pull ${DOCKER_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}
+
+          docker stop cloud-architecture || true
+          docker rm cloud-architecture || true
+
           docker run -d -p 8080:8080 \
             --restart unless-stopped \
             --name cloud-architecture \
             -e SPRING_PROFILES_ACTIVE=prod \
             ${DOCKER_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}
-          EOF
+          USERDATA
+          )
 
-          # [해결책] 2. 저장된 파일에서 읽어와서 글자를 치환하고 Base64로 암호화합니다.
-          USER_DATA=$(cat userdata.sh | sed "s|__IMAGE_TAG__|${IMAGE_TAG}|g; s|__DOCKER_USERNAME__|${DOCKER_USERNAME}|g" | base64 -w 0)
-
-          # 3. 새로운 시작 템플릿 버전을 생성합니다.
           NEW_VERSION=$(aws ec2 create-launch-template-version \
             --launch-template-id ${LAUNCH_TEMPLATE_ID} \
             --source-version '$Latest' \
@@ -127,9 +128,102 @@ jobs:
             --query 'LaunchTemplateVersion.VersionNumber' \
             --output text)
 
-          # 4. 기본 버전을 방금 만든 새 버전으로 교체합니다.
           aws ec2 modify-launch-template \
             --launch-template-id ${LAUNCH_TEMPLATE_ID} \
             --default-version ${NEW_VERSION}
 
           echo "✅ Launch Template v${NEW_VERSION} 업데이트 완료"
+
+      - name: Rolling restart Docker container on ASG instances (SSM)
+        env:
+          ASG_NAME: ${{ vars.ASG_NAME }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+          DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
+          AWS_REGION: ap-northeast-2
+        run: |
+          set -euo pipefail
+
+          INSTANCE_IDS=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$ASG_NAME" \
+            --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService'].InstanceId" \
+            --output text)
+
+          if [ -z "$INSTANCE_IDS" ]; then
+            echo "❌ ASG에 InService 인스턴스가 없습니다."
+            exit 1
+          fi
+
+          echo "대상 인스턴스: $INSTANCE_IDS"
+          echo "배포 태그: ${IMAGE_TAG}"
+
+          # SSM에 보낼 명령(파일). heredoc은 '로 막아서 $(...)가 runner에서 실행되는 사고를 방지.
+          cat <<'JSON' > ssm-commands.json
+          {
+            "commands": [
+              "set -euo pipefail",
+              "AWS_REGION=ap-northeast-2",
+              "DOCKER_USERNAME=__DOCKER_USERNAME__",
+              "IMAGE_NAME=cloud-architecture",
+              "IMAGE_TAG=__IMAGE_TAG__",
+              "CONTAINER_NAME=cloud-architecture",
+              "DOCKER_TOKEN=$(aws ssm get-parameter --name /cloud-architecture/prod/DOCKER_TOKEN --with-decryption --query Parameter.Value --output text --region $AWS_REGION)",
+              "echo \"$DOCKER_TOKEN\" | docker login -u \"$DOCKER_USERNAME\" --password-stdin",
+              "docker pull $DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG",
+              "docker stop $CONTAINER_NAME || true",
+              "docker rm $CONTAINER_NAME || true",
+              "docker run -d -p 8080:8080 --restart unless-stopped --name $CONTAINER_NAME -e SPRING_PROFILES_ACTIVE=prod $DOCKER_USERNAME/$IMAGE_NAME:$IMAGE_TAG",
+              "docker image prune -f || true"
+            ]
+          }
+          JSON
+
+          sed -i "s|__DOCKER_USERNAME__|${DOCKER_USERNAME}|g; s|__IMAGE_TAG__|${IMAGE_TAG}|g" ssm-commands.json
+
+          # 롤링(1대씩)로 실행 → 최소 2대 이상이면 무중단에 가깝다
+          for IID in $INSTANCE_IDS; do
+            echo "▶️ [$IID] 컨테이너 재기동 시작"
+
+            CMD_ID=$(aws ssm send-command \
+              --instance-ids "$IID" \
+              --document-name "AWS-RunShellScript" \
+              --comment "Restart cloud-architecture:${IMAGE_TAG}" \
+              --parameters file://ssm-commands.json \
+              --query "Command.CommandId" \
+              --output text)
+
+            echo "CommandId=$CMD_ID"
+
+            for t in $(seq 1 90); do
+              STATUS=$(aws ssm get-command-invocation \
+                --command-id "$CMD_ID" \
+                --instance-id "$IID" \
+                --query "Status" \
+                --output text 2>/dev/null || echo "Pending")
+
+              echo "  - [$IID] 상태: $STATUS (${t}/90)"
+
+              if [ "$STATUS" = "Success" ]; then
+                echo "✅ [$IID] 성공"
+                break
+              fi
+
+              if [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+                echo "❌ [$IID] 실패: $STATUS"
+                echo "--- STDOUT ---"
+                aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$IID" --query "StandardOutputContent" --output text || true
+                echo "--- STDERR ---"
+                aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$IID" --query "StandardErrorContent" --output text || true
+                exit 1
+              fi
+
+              sleep 10
+              if [ "$t" -eq 90 ]; then
+                echo "❌ [$IID] SSM 명령 대기 타임아웃"
+                exit 1
+              fi
+            done
+
+            sleep 20
+          done
+
+          echo "✅ 모든 인스턴스 컨테이너 재기동 완료"
