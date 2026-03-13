@@ -134,7 +134,7 @@ jobs:
           ASG_NAME: ${{ vars.ASG_NAME }}
         run: |
           REFRESH_ID=$(aws autoscaling start-instance-refresh \
-            --auto-scaling-group-name ${ASG_NAME} \
+            --auto-scaling-group-name ${{vars.ASG_NAME}} \
             --preferences '{
               "MinHealthyPercentage": 100,
               "InstanceWarmup": 120
