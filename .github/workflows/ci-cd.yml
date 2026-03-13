@@ -78,14 +78,15 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-northeast-2
 
-      #  1.오토스케일링으로 켜질 새 서버를 위해 시작 템플릿 업데이트 (필수)
+      # 🌟 1. 미래에 오토스케일링으로 켜질 새 서버를 위해 시작 템플릿 업데이트 (필수)
       - name: Update Launch Template
         env:
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
           DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
           LAUNCH_TEMPLATE_ID: ${{ vars.LAUNCH_TEMPLATE_ID }}
         run: |
-          USER_DATA=$(cat <<'USERDATA' | sed "s|__IMAGE_TAG__|${IMAGE_TAG}|g; s|__DOCKER_USERNAME__|${DOCKER_USERNAME}|g" | base64 -w 0
+          # [해결책] 1. 스크립트를 텍스트 파일(userdata.sh)로 먼저 안전하게 저장합니다.
+          cat << 'EOF' > userdata.sh
           #!/bin/bash
           set -e
           AWS_REGION="ap-northeast-2"
@@ -101,4 +102,34 @@ jobs:
           DOCKER_TOKEN=$(aws ssm get-parameter \
             --name "/cloud-architecture/prod/DOCKER_TOKEN" \
             --with-decryption \
-            --query "Parameter.
+            --query "Parameter.Value" \
+            --output text \
+            --region ${AWS_REGION})
+
+          echo $DOCKER_TOKEN | docker login -u $DOCKER_USERNAME --password-stdin
+
+          docker pull ${DOCKER_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}
+          docker run -d -p 8080:8080 \
+            --restart unless-stopped \
+            --name cloud-architecture \
+            -e SPRING_PROFILES_ACTIVE=prod \
+            ${DOCKER_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}
+          EOF
+
+          # [해결책] 2. 저장된 파일에서 읽어와서 글자를 치환하고 Base64로 암호화합니다.
+          USER_DATA=$(cat userdata.sh | sed "s|__IMAGE_TAG__|${IMAGE_TAG}|g; s|__DOCKER_USERNAME__|${DOCKER_USERNAME}|g" | base64 -w 0)
+
+          # 3. 새로운 시작 템플릿 버전을 생성합니다.
+          NEW_VERSION=$(aws ec2 create-launch-template-version \
+            --launch-template-id ${LAUNCH_TEMPLATE_ID} \
+            --source-version '$Latest' \
+            --launch-template-data "{\"UserData\":\"${USER_DATA}\"}" \
+            --query 'LaunchTemplateVersion.VersionNumber' \
+            --output text)
+
+          # 4. 기본 버전을 방금 만든 새 버전으로 교체합니다.
+          aws ec2 modify-launch-template \
+            --launch-template-id ${LAUNCH_TEMPLATE_ID} \
+            --default-version ${NEW_VERSION}
+
+          echo "✅ Launch Template v${NEW_VERSION} 업데이트 완료"
