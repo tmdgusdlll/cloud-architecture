@@ -150,7 +150,7 @@ jobs:
           ASG_NAME: ${{ vars.ASG_NAME }}
           REFRESH_ID: ${{ steps.refresh.outputs.refresh_id }}
         run: |
-          for i in $(seq 1 30); do
+          for i in $(seq 1 60); do
             STATUS=$(aws autoscaling describe-instance-refreshes \
               --auto-scaling-group-name ${ASG_NAME} \
               --instance-refresh-ids ${REFRESH_ID} \
