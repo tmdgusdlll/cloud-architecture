@@ -137,7 +137,8 @@ jobs:
             --auto-scaling-group-name ${ASG_NAME} \
             --preferences '{
               "MinHealthyPercentage": 100,
-              "InstanceWarmup": 120
+              "MaxHealthyPercentage": 200,
+              "InstanceWarmup": 300
             }' \
             --query 'InstanceRefreshId' \
             --output text)
@@ -156,8 +157,24 @@ jobs:
               --instance-refresh-ids ${REFRESH_ID} \
               --query 'InstanceRefreshes[0].Status' \
               --output text)
-
-            echo "시도 ${i}/60 - 상태: ${STATUS}"
+          REASON=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${ASG_NAME}" \
+              --instance-refresh-ids "${REFRESH_ID}" \
+              --query 'InstanceRefreshes[0].StatusReason' \
+              --output text)
+          PCT=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${ASG_NAME}" \
+              --instance-refresh-ids "${REFRESH_ID}" \
+              --query 'InstanceRefreshes[0].PercentageComplete' \
+              --output text)
+          LEFT=$(aws autoscaling describe-instance-refreshes \
+              --auto-scaling-group-name "${ASG_NAME}" \
+              --instance-refresh-ids "${REFRESH_ID}" \
+              --query 'InstanceRefreshes[0].InstancesToUpdate' \
+              --output text)
+          
+          
+            echo "시도 ${i}/60 - 상태: ${STATUS} 진행률:${PCT}% 남은인스턴스:${LEFT} 사유:${REASON}"
 
             if [ "${STATUS}" = "Successful" ]; then
               echo "✅ 배포 완료!"
