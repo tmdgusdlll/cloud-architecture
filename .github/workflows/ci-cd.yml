@@ -152,12 +152,12 @@ jobs:
         run: |
           for i in $(seq 1 60); do
             STATUS=$(aws autoscaling describe-instance-refreshes \
-              --auto-scaling-group-name ${ASG_NAME} \
+              --auto-scaling-group-name "${ASG_NAME}" \
               --instance-refresh-ids ${REFRESH_ID} \
               --query 'InstanceRefreshes[0].Status' \
               --output text)
 
-            echo "시도 ${i}/30 - 상태: ${STATUS}"
+            echo "시도 ${i}/60 - 상태: ${STATUS}"
 
             if [ "${STATUS}" = "Successful" ]; then
               echo "✅ 배포 완료!"
