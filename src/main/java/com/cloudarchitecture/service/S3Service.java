@@ -53,7 +53,7 @@ public class S3Service {
                     () -> new MemberNotFoundException("해당 멤버가 없습니다.")
             );
             String key = member.getProfileImageUrl();
-            String cloudFrontUrl = cloudFrontDomain + key;
+            String cloudFrontUrl = cloudFrontDomain + "/" + key;
 
             return ApiResponse.success(new CloudFrontUrlResponse(cloudFrontUrl));
         } catch (Exception e) {
